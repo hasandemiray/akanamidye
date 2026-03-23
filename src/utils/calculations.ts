@@ -1,44 +1,87 @@
 import type { Hat, HatHesaplamalar, BlokOzet, DashboardOzet } from '../types/hat';
 
-// 🔥 AY BAZLI BÜYÜME
+const ARA = 56;
+const MAX_METRE = 2000;
+
+// 🔥 AYLIK BÜYÜME
 function getAylikBuyume(ay: number): number {
   if (ay >= 11 || ay <= 5) return 0.5;
   return 0.25;
 }
 
-export function hatHesapla(hat: Hat): HatHesaplamalar {
-  const yavru_orani = hat.yavru_orani ?? 0;
-  const baslangic_boy = hat.midye_boyu_cm ?? 1;
+// 🔥 HAT İÇİN TÜM HESAPLAMA
+export function hatDurumunuHesapla(
+  hat: Hat,
+  activities: any[]
+) {
+  const hatAktiviteleri = activities.filter(
+    (a) => a.line_id === hat.id
+  );
 
-  const toplam_ekilen_midye = hat.metrede_midye * hat.halat_metresi;
+  let toplam_metre = 0;
+  let toplam_kg = 0;
+  let toplam_yavru = 0;
 
-  const ekimTarihi = new Date(hat.ekim_tarihi);
-  const bugun = new Date();
+  hatAktiviteleri.forEach((a) => {
+    const metre = a.ara_sayisi * ARA;
+    const kg = metre * a.metrede_kg;
 
-  let currentDate = new Date(ekimTarihi);
+    if (a.type === "PLANTING") {
+      toplam_metre += metre;
+      toplam_kg += kg;
+    }
+
+    if (a.type === "HARVEST") {
+      toplam_metre -= metre;
+
+      const hasatKg = kg;
+      const yavru = (hasatKg * (a.yavru_orani || 0)) / 100;
+
+      toplam_kg -= hasatKg;
+      toplam_yavru += yavru;
+    }
+  });
+
+  const kalan_metre = MAX_METRE - toplam_metre;
+  const kalan_ara = Math.floor(kalan_metre / ARA);
+
+  return {
+    toplam_metre,
+    toplam_kg,
+    kalan_metre,
+    kalan_ara,
+    toplam_yavru
+  };
+}
+
+// 🔥 BÜYÜME + HASAT TARİHİ
+export function buyumeHesapla(
+  baslangic_boy: number,
+  ekim_tarihi: string
+) {
   let boy = baslangic_boy;
 
-  while (currentDate < bugun) {
-    const ay = currentDate.getMonth() + 1;
+  const baslangic = new Date(ekim_tarihi);
+  const bugun = new Date();
+
+  let current = new Date(baslangic);
+
+  while (current < bugun) {
+    const ay = current.getMonth() + 1;
     const aylik = getAylikBuyume(ay);
 
     boy += aylik / 30;
-    currentDate.setDate(currentDate.getDate() + 1);
+
+    current.setDate(current.getDate() + 1);
   }
 
-  const guncel_boy = boy;
+  // 🔥 hasat tahmini (6 cm)
+  let hasatTarihi: string | null = null;
 
-  const buyume_katsayisi = guncel_boy / baslangic_boy;
-  const guncel_kg = toplam_ekilen_midye * buyume_katsayisi;
-
-  const yavru_midye = (guncel_kg * yavru_orani) / 100;
-
-  let tahmini_hasat_tarihi: string | null = null;
-  let hedef_gun_kala: number | null = null;
-
-  if (guncel_boy < 6) {
+  if (boy < 6) {
+    let tempBoy = boy;
     let tempDate = new Date(bugun);
-    let tempBoy = guncel_boy;
+
     let gun = 0;
 
     while (tempBoy < 6 && gun < 1000) {
@@ -46,42 +89,35 @@ export function hatHesapla(hat: Hat): HatHesaplamalar {
       const aylik = getAylikBuyume(ay);
 
       tempBoy += aylik / 30;
+
       tempDate.setDate(tempDate.getDate() + 1);
       gun++;
     }
 
-    hedef_gun_kala = gun;
-    tahmini_hasat_tarihi = tempDate.toISOString().split('T')[0];
+    hasatTarihi = tempDate.toISOString().split("T")[0];
   }
 
-  const gecen_gun = Math.floor(
-    (bugun.getTime() - ekimTarihi.getTime()) / (1000 * 60 * 60 * 24)
-  );
-
   return {
-    toplam_ekilen_midye,
-    gecen_gun,
-    buyume_sonrasi: guncel_kg,
-    yavru_midye,
-    guncel_kg,
-    tahmini_hasat_tarihi,
-    hedef_gun_kala,
-    buyume_yuzdesi: Math.min((guncel_boy / 6) * 100, 100),
-    guncel_boy
+    guncel_boy: boy,
+    hasatTarihi
   };
 }
 
-export function dashboardHesapla(hatlar: Hat[]): DashboardOzet {
-  const blokMap = new Map<string, BlokOzet>();
+// 🔥 DASHBOARD
+export function dashboardHesapla(
+  hatlar: Hat[],
+  activities: any[]
+) {
+  let toplam_kg = 0;
+  let toplam_yavru = 0;
 
-  let toplam_tum_hatlar_kg = 0;
-  let toplam_yavru_midye_kg = 0;
+  const blokMap = new Map();
 
-  hatlar.forEach(hat => {
-    const hesap = hatHesapla(hat);
+  hatlar.forEach((hat) => {
+    const durum = hatDurumunuHesapla(hat, activities);
 
-    toplam_tum_hatlar_kg += hesap.guncel_kg;
-    toplam_yavru_midye_kg += hesap.yavru_midye;
+    toplam_kg += durum.toplam_kg;
+    toplam_yavru += durum.toplam_yavru;
 
     if (!blokMap.has(hat.blok)) {
       blokMap.set(hat.blok, {
@@ -92,16 +128,23 @@ export function dashboardHesapla(hatlar: Hat[]): DashboardOzet {
       });
     }
 
-    const blok = blokMap.get(hat.blok)!;
-    blok.toplam_kg += hesap.guncel_kg;
-    blok.toplam_yavru += hesap.yavru_midye;
+    const blok = blokMap.get(hat.blok);
+
+    blok.toplam_kg += durum.toplam_kg;
+    blok.toplam_yavru += durum.toplam_yavru;
     blok.hat_sayisi += 1;
   });
 
   return {
-    toplam_tum_hatlar_kg,
-    toplam_yavru_midye_kg,
+    toplam_tum_hatlar_kg: toplam_kg,
+    toplam_yavru_midye_kg: toplam_yavru,
     toplam_hat_sayisi: hatlar.length,
     blok_ozetleri: Array.from(blokMap.values())
   };
+}
+
+// 🔥 FORMAT
+export function formatNumber(num: number): string {
+  if (isNaN(num)) return "0";
+  return num.toFixed(0);
 }
