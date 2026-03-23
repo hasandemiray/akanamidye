@@ -1,68 +1,73 @@
 import type { Hat, HatHesaplamalar, BlokOzet, DashboardOzet } from '../types/hat';
 
-// Daha gerçekçi büyüme
-const BUYUME_KATSAYISI = 1.3;
-const GUNLUK_BUYUME = 0.002;
+// 🔥 AY BAZLI BÜYÜME
+function getAylikBuyume(ay: number): number {
+  if (ay >= 11 || ay <= 5) return 0.5;
+  return 0.25;
+}
 
 export function hatHesapla(hat: Hat): HatHesaplamalar {
-  // 🔥 güvenli defaultlar (NaN fix)
   const yavru_orani = hat.yavru_orani ?? 0;
-  const hedef_kg = hat.hedef_kg ?? 0;
+  const baslangic_boy = hat.midye_boyu_cm ?? 1;
 
   const toplam_ekilen_midye = hat.metrede_midye * hat.halat_metresi;
 
   const ekimTarihi = new Date(hat.ekim_tarihi);
   const bugun = new Date();
 
-  const gecen_gun = Math.max(
-    0,
-    Math.floor(
-      (bugun.getTime() - ekimTarihi.getTime()) / (1000 * 60 * 60 * 24)
-    )
-  );
+  let currentDate = new Date(ekimTarihi);
+  let boy = baslangic_boy;
 
-  // büyüme sonrası (potansiyel)
-  const buyume_sonrasi = toplam_ekilen_midye * BUYUME_KATSAYISI;
+  while (currentDate < bugun) {
+    const ay = currentDate.getMonth() + 1;
+    const aylik = getAylikBuyume(ay);
 
-  // yavru hesap
-  const yavru_midye = (buyume_sonrasi * yavru_orani) / 100;
+    boy += aylik / 30;
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
 
-  // güncel kg (zamanla büyüme)
-  const guncel_kg =
-    toplam_ekilen_midye * (1 + GUNLUK_BUYUME * gecen_gun);
+  const guncel_boy = boy;
+
+  const buyume_katsayisi = guncel_boy / baslangic_boy;
+  const guncel_kg = toplam_ekilen_midye * buyume_katsayisi;
+
+  const yavru_midye = (guncel_kg * yavru_orani) / 100;
 
   let tahmini_hasat_tarihi: string | null = null;
   let hedef_gun_kala: number | null = null;
 
-  if (hedef_kg > 0 && hedef_kg > guncel_kg) {
-    const kalan_kg = hedef_kg - guncel_kg;
+  if (guncel_boy < 6) {
+    let tempDate = new Date(bugun);
+    let tempBoy = guncel_boy;
+    let gun = 0;
 
-    const gereken_gun = Math.ceil(
-      kalan_kg / (toplam_ekilen_midye * GUNLUK_BUYUME)
-    );
+    while (tempBoy < 6 && gun < 1000) {
+      const ay = tempDate.getMonth() + 1;
+      const aylik = getAylikBuyume(ay);
 
-    hedef_gun_kala = gereken_gun;
+      tempBoy += aylik / 30;
+      tempDate.setDate(tempDate.getDate() + 1);
+      gun++;
+    }
 
-    const hasatTarihi = new Date(bugun);
-    hasatTarihi.setDate(hasatTarihi.getDate() + gereken_gun);
-
-    tahmini_hasat_tarihi = hasatTarihi.toISOString().split('T')[0];
+    hedef_gun_kala = gun;
+    tahmini_hasat_tarihi = tempDate.toISOString().split('T')[0];
   }
 
-  const buyume_yuzdesi =
-    buyume_sonrasi > 0
-      ? (guncel_kg / buyume_sonrasi) * 100
-      : 0;
+  const gecen_gun = Math.floor(
+    (bugun.getTime() - ekimTarihi.getTime()) / (1000 * 60 * 60 * 24)
+  );
 
   return {
     toplam_ekilen_midye,
     gecen_gun,
-    buyume_sonrasi,
+    buyume_sonrasi: guncel_kg,
     yavru_midye,
     guncel_kg,
     tahmini_hasat_tarihi,
     hedef_gun_kala,
-    buyume_yuzdesi: Math.min(buyume_yuzdesi, 100)
+    buyume_yuzdesi: Math.min((guncel_boy / 6) * 100, 100),
+    guncel_boy
   };
 }
 
@@ -99,14 +104,4 @@ export function dashboardHesapla(hatlar: Hat[]): DashboardOzet {
     toplam_hat_sayisi: hatlar.length,
     blok_ozetleri: Array.from(blokMap.values())
   };
-}
-
-export function formatNumber(num: number): string {
-  if (isNaN(num)) return "0.00";
-  return num.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-}
-
-export function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString('tr-TR');
 }

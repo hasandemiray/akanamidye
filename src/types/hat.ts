@@ -1,16 +1,19 @@
-export type Blok = 'A' | 'B' | 'C' | 'D' | 'E' | 'F';
-
 export interface Hat {
   id: string;
   hat_adi: string;
-  blok: Blok;
+  blok: string;
   halat_metresi: number;
   metrede_midye: number;
   ekim_tarihi: string;
-  yavru_orani: number;
-  hedef_kg: number | null;
-  created_at: string;
-  updated_at: string;
+
+  // 🔥 ZORUNLU ALAN
+  midye_boyu_cm: number;
+
+  yavru_orani?: number;
+  hedef_kg?: number;
+
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface HatHesaplamalar {
@@ -22,10 +25,11 @@ export interface HatHesaplamalar {
   tahmini_hasat_tarihi: string | null;
   hedef_gun_kala: number | null;
   buyume_yuzdesi: number;
+  guncel_boy: number;
 }
 
 export interface BlokOzet {
-  blok: Blok;
+  blok: string;
   toplam_kg: number;
   toplam_yavru: number;
   hat_sayisi: number;
